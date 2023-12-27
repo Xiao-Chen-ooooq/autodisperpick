@@ -1,0 +1,516 @@
+from geopy.distance import great_circle as gr
+from scipy.interpolate import CubicSpline
+from scipy.interpolate import interp1d
+from scipy.signal import hilbert
+import re
+import math
+from scipy.interpolate import CubicSpline
+from geopy.distance import geodesic
+import numpy as np
+import matlab.engine
+en=matlab.engine.start_matlab()
+def nextpow2(n):
+    return np.ceil(np.log2(np.abs(n))).astype('long')
+import matplotlib.pyplot as plt
+import matlab
+import matlab.engine
+en=matlab.engine.start_matlab()
+import matlab.engine
+from scipy import signal
+from scipy.signal import firwin
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+couns=0
+
+
+
+import cv2
+import os
+
+
+df_freq=0.001
+DeltaV = 0.002
+StartT=1
+EndT=7
+DeltaT=0.04
+WinMinV=1.0
+WinMaxV=4.0
+LX=int((EndT-StartT)/DeltaT+1)
+LY=int((WinMaxV-WinMinV)/DeltaV+1)
+g_WindnumT =5
+g_Winmintime=2.5
+df_freq=0.001
+minSNR=5
+def EnvelopeImageCalculation(WinWave, fs, TPoint, StaDist):
+    alfa = np.array([[0,100,250,500,1000,2000,4000,20000],[5,8,12,20,25,35,50,75]])
+    f= interp1d(alfa[0,:], alfa[1, :], 'linear')
+    guassalfa=f(StaDist)
+    NumCtrT = len(TPoint)
+    PtNum = len(WinWave)
+    nfft = math.pow(2,nextpow2(max(PtNum,1024*fs)))
+    xxfft = np.fft.fft(WinWave, int(nfft))
+    fxx = np.array(range(0,int(nfft/2)+1,1))/nfft*fs
+    IIf = np.array(range(1,int(nfft/2+1)+1,1))
+    JJf = np.array(range(int(nfft/2+2),int(nfft)+1,1))
+    EnvelopeImage = np.zeros((NumCtrT, PtNum))
+    for i in range(NumCtrT):
+        i=i+1
+        CtrT = TPoint[i-1]
+        fc = 1/CtrT                
+        Hf = np.exp(-guassalfa*np.power((fxx - fc),2)/math.pow(fc,2))
+        yyfft = np.zeros(int(nfft))
+        yyfft[IIf-1] = xxfft[IIf-1]*Hf
+        yyfft[JJf-1] = np.conjugate(yyfft[np.array(np.array(range(2,int(nfft/2)+1,1))[::-1])])
+        yy = np.real(np.fft.ifft(yyfft, nfft))
+        filtwave = abs(hilbert(yy[:int(nfft)]))
+        EnvelopeImage[i-1, :PtNum] = filtwave[:PtNum]
+    return EnvelopeImage
+q=os.listdir(r'D:\EPSupup\q')
+r=os.listdir(r'D:\EPSupup\dispers')
+for m in q:
+    if m.replace('ZZZZ','CDisp.T.ZZZZ') in r:
+        fp=open(os.path.join(r'D:\EPSupup\dispers',m.replace('ZZZZ','CDisp.T.ZZZZ')))
+        k=fp.readlines()
+        temp=[]
+        for a in k[2:]:
+            temp.append(float(a.split()[1]))
+        yplabel_test=np.array(temp)
+        fg=open(os.path.join(r'D:\EPSupup\dispers',m.replace('ZZZZ','GDisp.ZZZZ')))
+        k=fg.readlines()
+        temp=[]
+        for a in k[2:]:
+            temp.append(float(a.split()[1]))
+        yglabel_test=np.array(temp)
+        count=0
+        matrix = []
+        f=open(os.path.join(r'D:\EPSupup\q',m))
+        for line in f.readlines():
+            if count==0:
+                lon0=line.split()[0]
+                lat0=line.split()[1]
+                sta1_elev=line.split()[2]
+            if count==1:
+                lon1=line.split()[0]
+                lat1=line.split()[1]
+                sta2_elev =line.split()[2]
+            count+=1
+            if count>2:
+                row = [float(num) for num in line.split()]
+                row=np.array(row)
+                matrix.append(row)
+        GreenFcn=np.array(matrix).transpose()
+        Time = GreenFcn[0,:]
+        PtNum =GreenFcn.shape[1]
+        maxamp = max(max(GreenFcn[1,:]), max(GreenFcn[2,:]))
+        if maxamp > 0:
+            GreenFcn[1,:] = GreenFcn[1,:]/maxamp
+            GreenFcn[2,:] = GreenFcn[2,:]/maxamp
+        GreenFcn[1,:] = hilbert(GreenFcn[1,:]).imag
+        GreenFcn[2,:] = hilbert(GreenFcn[2,:]).imag
+        GreenFcn = GreenFcn[1:3,:]
+        SampleF = 1/(Time[1] - Time[0])
+        SampleT = (Time[1] - Time[0])
+        TPoint = np.array(range(int(StartT*100),int(EndT*100+DeltaT*100),int(DeltaT*100)))/100
+        VPoint = np.array(range(int(WinMinV*1000),int(WinMaxV*1000+DeltaV*1000),int(DeltaV*1000)))/1000
+#         tempDist=en.deg2km(en.distance(float(lat0), float(lon0), float(lat1), float(lon1)))
+        tempDist=gr((float(lat0),float(lon0)),(float(lat1),float(lon1))).km
+        staElevDiff = abs(float(sta2_elev) - float(sta1_elev))/1000
+        StaDist = np.sqrt(tempDist*tempDist + staElevDiff*staElevDiff)
+        VImgPt = len(VPoint)
+        g_WinMaxPtNum = round(SampleF*StaDist/WinMinV) + 1
+        g_WinMinPtNum = round(SampleF*StaDist/WinMaxV) + 1
+        if g_WinMaxPtNum > PtNum:
+            g_WinMaxPtNum = PtNum-1
+            WinMinV = math.ceil(10*StaDist/Time[-1])/10
+        time = np.array(range(g_WinMinPtNum-1,g_WinMaxPtNum,1))/SampleF
+        SignalLength = len(time)
+        VPoint = np.array(range(int(WinMinV*1000),int(WinMaxV*1000+DeltaV*1000),int(DeltaV*1000)))/1000
+        VImgPt = round((WinMaxV - WinMinV)/DeltaV + 1)
+        TravPtV = StaDist/time
+        Time = np.array(range(0,PtNum,1))*SampleT
+        Window = np.zeros(PtNum)
+        Window[g_WinMinPtNum-1:g_WinMaxPtNum] = 1
+        TaperNum = round(20/SampleT)
+        if TaperNum > (g_WinMinPtNum-1):
+            TaperNum1 = g_WinMinPtNum-1
+            Window[:g_WinMinPtNum-1]= np.sin(0.5*math.pi*np.array(range(0,(TaperNum1),1))/TaperNum1)
+        else:
+            Window[(g_WinMinPtNum-TaperNum-1):(g_WinMinPtNum-1)] = np.sin(0.5*math.pi*np.array(range(0,(TaperNum),1))/TaperNum)
+        if (g_WinMaxPtNum + TaperNum) < PtNum:
+            Window[(g_WinMaxPtNum):(g_WinMaxPtNum+TaperNum)] = np.sin(0.5*math.pi*np.array(range(0,(TaperNum),1))/TaperNum)
+        else:
+            TaperNum2 = PtNum - (g_WinMaxPtNum+1) +1
+            Window[(g_WinMaxPtNum):(PtNum)] = np.sin(0.5*math.pi*np.array(reversed(range(0,TaperNum2,1)))/TaperNum2)
+
+        WavePtNum = min((g_WinMaxPtNum + TaperNum), PtNum)
+        WinWave = np.zeros(WavePtNum)
+        stackEGF = GreenFcn[0,:] + GreenFcn[1,:]
+        WinWave = stackEGF[:WavePtNum]*Window[:WavePtNum]
+        WinWave = WinWave/max(abs(WinWave))
+        stackEGF = stackEGF/max(abs(WinWave))
+        NoisePt = round(150/SampleT)
+        NoiseWinWave = np.zeros(NoisePt)
+        if ((g_WinMaxPtNum + TaperNum) + (EndT/SampleT))< PtNum:
+            nn = np.array(range((g_WinMaxPtNum + TaperNum + 1),min((g_WinMaxPtNum + TaperNum + NoisePt),PtNum)+1,1))
+            NoiseWinWave[:len(nn)] = stackEGF[nn-1]
+            NoiseIndex = 1
+            NoiseLength = len(nn)
+        else:
+            NoiseIndex = 0
+        alfa = np.array([[0,100,250,500,1000,2000,4000,20000],[5,8,12,20,25,35,50,75]])
+        f= interp1d(alfa[0,:], alfa[1, :], 'linear')
+        guassalfa=f(StaDist)
+        NumCtrT = len(TPoint)
+        PtNum = len(WinWave)
+        fs=SampleF
+        nfft = math.pow(2,nextpow2(max(PtNum,1024*fs)))
+        xxfft = np.fft.fft(WinWave, int(nfft))
+        fxx = np.array(range(0,int(nfft/2)+1,1))/nfft*fs
+        IIf = np.array(range(1,int(nfft/2+1)+1,1))
+        JJf = np.array(range(int(nfft/2+2),int(nfft)+1,1))
+        EnvelopeImage = np.zeros((NumCtrT, PtNum))
+        for i in range(NumCtrT):
+            i=i+1
+            CtrT = TPoint[i-1]
+            fc = 1/CtrT                
+            Hf = np.exp(-guassalfa*np.power((fxx - fc),2)/math.pow(fc,2))
+            yyfft = np.zeros(int(nfft))
+            yyfft[IIf-1] = xxfft[IIf-1]*Hf
+            yyfft[JJf-1] = np.conjugate(yyfft[np.array(np.array(range(2,int(nfft/2)+1,1))[::-1])])
+            yy = np.real(np.fft.ifft(yyfft, nfft))
+            filtwave = abs(hilbert(yy[:int(nfft)]))
+            EnvelopeImage[i-1, :PtNum] = filtwave[:PtNum]
+
+        EnvelopeImageSignal =EnvelopeImage
+        AmpS_T = np.amax(EnvelopeImageSignal, axis=1)
+        SNR_T = np.zeros(NumCtrT)
+        if NoiseIndex == 1:
+            EnvelopeImageNoise = EnvelopeImageCalculation(NoiseWinWave*signal.windows.tukey(NoisePt,0.2).T.conjugate(), SampleF, TPoint, StaDist)
+            for i in range(NumCtrT):
+                i=i+1
+                SNR_T[i-1] = AmpS_T[i-1]/np.mean(EnvelopeImageNoise[i-1,:NoiseLength])
+            HighSNRIndex = np.where(SNR_T > minSNR)
+            g_HighSNRIndex = HighSNRIndex[0]+1
+            if np.mean(SNR_T) < minSNR/2 or max(SNR_T) < minSNR or len(HighSNRIndex) < 0.1*NumCtrT:
+                IsDispGood = 0
+            else:
+                IsDispGood = 1
+        timeptnum = np.array(range(g_WinMinPtNum,g_WinMaxPtNum+1,1))
+        yglabel_test[:g_HighSNRIndex[0]]=0
+        yglabel_test[g_HighSNRIndex[-1]-1:]=0
+        yplabel_test[:g_HighSNRIndex[0]]=0
+        yplabel_test[g_HighSNRIndex[-1]-1:]=0
+        g=pd.DataFrame(data=yglabel_test)
+        p=pd.DataFrame(data=yplabel_test)
+        g.to_csv('D:\\EPSupup\\ad\\disperg\\'+'g'+m+'.csv')
+        p.to_csv('D:\\EPSupup\\ad\\disperp\\'+'p'+m+'.csv')
+        GroupVImg=np.zeros((VImgPt,NumCtrT))
+        VPoint=VPoint[:]
+        for i in range(NumCtrT):
+            i=i+1
+            f= interp1d(TravPtV, EnvelopeImageSignal[i-1,timeptnum-1].T.conjugate()/AmpS_T[i-1], 'cubic',fill_value="extrapolate")
+            GroupVImg[:VImgPt, i-1] =f(VPoint[:])
+        GroupVImg[:,g_HighSNRIndex[0]-1]=0
+        GroupVImg[:,g_HighSNRIndex[-1]-1]=0
+        g=pd.DataFrame(data=GroupVImg)
+        g.to_csv('D:\\EPSupup\\ad\\datag\\'+'g'+m+'.csv')
+        InitialX=(yglabel_test!=0).argmax(axis=0)+1
+        InitialY=int((yglabel_test[(yglabel_test!=0).argmax(axis=0)]-WinMinV)*500)+1
+        if np.sum(yglabel_test)==0:
+            continue
+        fftNumPt = np.power(2,nextpow2(SampleF/df_freq))
+        WaveNumPt = len(WinWave)
+        en.cd('D:\EPSupup')
+        PhaseVImg=en.PhaseVImageCalculatio(float(StaDist),matlab.double(WinWave.tolist()),float(NumCtrT),float(g_WinMinPtNum),float(g_WinMaxPtNum),float(VImgPt),matlab.double(GroupVImg.tolist()),float(InitialX),float(InitialY),float(SampleF),float(StartT),float(EndT),float(DeltaT),float(WinMinV),float(WinMaxV),float(DeltaV),float(df_freq),float(g_WindnumT) ,float(g_Winmintime))
+        PhaseVImg=np.array(PhaseVImg)
+        PhaseVImg[:,g_HighSNRIndex[0]-1]=0
+        PhaseVImg[:,g_HighSNRIndex[-1]-1]=0
+        p=pd.DataFrame(data=PhaseVImg)
+        p.to_csv('D:\\EPSupup\\ad\\datap\\'+'p'+m+'.csv')
+    elif (m.replace('ZZZZ','CDisp.T.ZZZZ') not in r) and m.replace('ZZZZ','GDisp.ZZZZ') in r:
+        fg=open(os.path.join(r'D:\EPSupup\dispers',m.replace('ZZZZ','GDisp.ZZZZ')))
+        k=fg.readlines()
+        temp=[]
+        for a in k[2:]:
+            temp.append(float(a.split()[1]))
+        yglabel_test=np.array(temp)
+        count=0
+        matrix = []
+        f=open(os.path.join(r'D:\EPSupup\q',m))
+        for line in f.readlines():
+            if count==0:
+                lon0=line.split()[0]
+                lat0=line.split()[1]
+                sta1_elev=line.split()[2]
+            if count==1:
+                lon1=line.split()[0]
+                lat1=line.split()[1]
+                sta2_elev =line.split()[2]
+            count+=1
+            if count>2:
+                row = [float(num) for num in line.split()]
+                row=np.array(row)
+                matrix.append(row)
+        GreenFcn=np.array(matrix).transpose()
+        Time = GreenFcn[0,:]
+        PtNum =GreenFcn.shape[1]
+        maxamp = max(max(GreenFcn[1,:]), max(GreenFcn[2,:]))
+        if maxamp > 0:
+            GreenFcn[1,:] = GreenFcn[1,:]/maxamp
+            GreenFcn[2,:] = GreenFcn[2,:]/maxamp
+        GreenFcn[1,:] = hilbert(GreenFcn[1,:]).imag
+        GreenFcn[2,:] = hilbert(GreenFcn[2,:]).imag
+        GreenFcn = GreenFcn[1:3,:]
+        SampleF = 1/(Time[1] - Time[0])
+        SampleT = (Time[1] - Time[0])
+        TPoint = np.array(range(int(StartT*100),int(EndT*100+DeltaT*100),int(DeltaT*100)))/100
+        VPoint = np.array(range(int(WinMinV*1000),int(WinMaxV*1000+DeltaV*1000),int(DeltaV*1000)))/1000
+#         tempDist=en.deg2km(en.distance(float(lat0), float(lon0), float(lat1), float(lon1)))
+        tempDist=gr((float(lat0),float(lon0)),(float(lat1),float(lon1))).km
+        staElevDiff = abs(float(sta2_elev) - float(sta1_elev))/1000
+        StaDist = np.sqrt(tempDist*tempDist + staElevDiff*staElevDiff)
+        VImgPt = len(VPoint)
+        g_WinMaxPtNum = round(SampleF*StaDist/WinMinV) + 1
+        g_WinMinPtNum = round(SampleF*StaDist/WinMaxV) + 1
+        if g_WinMaxPtNum > PtNum:
+            g_WinMaxPtNum = PtNum-1
+            WinMinV = math.ceil(10*StaDist/Time[-1])/10
+        time = np.array(range(g_WinMinPtNum-1,g_WinMaxPtNum,1))/SampleF
+        SignalLength = len(time)
+        VPoint = np.array(range(int(WinMinV*1000),int(WinMaxV*1000+DeltaV*1000),int(DeltaV*1000)))/1000
+        VImgPt = round((WinMaxV - WinMinV)/DeltaV + 1)
+        TravPtV = StaDist/time
+        Time = np.array(range(0,PtNum,1))*SampleT
+        Window = np.zeros(PtNum)
+        Window[g_WinMinPtNum-1:g_WinMaxPtNum] = 1
+        TaperNum = round(20/SampleT)
+        if TaperNum > (g_WinMinPtNum-1):
+            TaperNum1 = g_WinMinPtNum-1
+            Window[:g_WinMinPtNum-1]= np.sin(0.5*math.pi*np.array(range(0,(TaperNum1),1))/TaperNum1)
+        else:
+            Window[(g_WinMinPtNum-TaperNum-1):(g_WinMinPtNum-1)] = np.sin(0.5*math.pi*np.array(range(0,(TaperNum),1))/TaperNum)
+        if (g_WinMaxPtNum + TaperNum) < PtNum:
+            Window[(g_WinMaxPtNum):(g_WinMaxPtNum+TaperNum)] = np.sin(0.5*math.pi*np.array(range(0,(TaperNum),1))/TaperNum)
+        else:
+            TaperNum2 = PtNum - (g_WinMaxPtNum+1) +1
+            Window[(g_WinMaxPtNum):(PtNum)] = np.sin(0.5*math.pi*np.array(reversed(range(0,TaperNum2,1)))/TaperNum2)
+
+        WavePtNum = min((g_WinMaxPtNum + TaperNum), PtNum)
+        WinWave = np.zeros(WavePtNum)
+        stackEGF = GreenFcn[0,:] + GreenFcn[1,:]
+        WinWave = stackEGF[:WavePtNum]*Window[:WavePtNum]
+        WinWave = WinWave/max(abs(WinWave))
+        stackEGF = stackEGF/max(abs(WinWave))
+        NoisePt = round(150/SampleT)
+        NoiseWinWave = np.zeros(NoisePt)
+        if ((g_WinMaxPtNum + TaperNum) + (EndT/SampleT))< PtNum:
+            nn = np.array(range((g_WinMaxPtNum + TaperNum + 1),min((g_WinMaxPtNum + TaperNum + NoisePt),PtNum)+1,1))
+            NoiseWinWave[:len(nn)] = stackEGF[nn-1]
+            NoiseIndex = 1
+            NoiseLength = len(nn)
+        else:
+            NoiseIndex = 0
+        alfa = np.array([[0,100,250,500,1000,2000,4000,20000],[5,8,12,20,25,35,50,75]])
+        f= interp1d(alfa[0,:], alfa[1, :], 'linear')
+        guassalfa=f(StaDist)
+        NumCtrT = len(TPoint)
+        PtNum = len(WinWave)
+        fs=SampleF
+        nfft = math.pow(2,nextpow2(max(PtNum,1024*fs)))
+        xxfft = np.fft.fft(WinWave, int(nfft))
+        fxx = np.array(range(0,int(nfft/2)+1,1))/nfft*fs
+        IIf = np.array(range(1,int(nfft/2+1)+1,1))
+        JJf = np.array(range(int(nfft/2+2),int(nfft)+1,1))
+        EnvelopeImage = np.zeros((NumCtrT, PtNum))
+        for i in range(NumCtrT):
+            i=i+1
+            CtrT = TPoint[i-1]
+            fc = 1/CtrT                
+            Hf = np.exp(-guassalfa*np.power((fxx - fc),2)/math.pow(fc,2))
+            yyfft = np.zeros(int(nfft))
+            yyfft[IIf-1] = xxfft[IIf-1]*Hf
+            yyfft[JJf-1] = np.conjugate(yyfft[np.array(np.array(range(2,int(nfft/2)+1,1))[::-1])])
+            yy = np.real(np.fft.ifft(yyfft, nfft))
+            filtwave = abs(hilbert(yy[:int(nfft)]))
+            EnvelopeImage[i-1, :PtNum] = filtwave[:PtNum]
+
+        EnvelopeImageSignal =EnvelopeImage
+        AmpS_T = np.amax(EnvelopeImageSignal, axis=1)
+        SNR_T = np.zeros(NumCtrT)
+        if NoiseIndex == 1:
+            EnvelopeImageNoise = EnvelopeImageCalculation(NoiseWinWave*signal.windows.tukey(NoisePt,0.2).T.conjugate(), SampleF, TPoint, StaDist)
+            for i in range(NumCtrT):
+                i=i+1
+                SNR_T[i-1] = AmpS_T[i-1]/np.mean(EnvelopeImageNoise[i-1,:NoiseLength])
+            HighSNRIndex = np.where(SNR_T > minSNR)
+            g_HighSNRIndex = HighSNRIndex[0]+1
+            if np.mean(SNR_T) < minSNR/2 or max(SNR_T) < minSNR or len(HighSNRIndex) < 0.1*NumCtrT:
+                IsDispGood = 0
+            else:
+                IsDispGood = 1
+        timeptnum = np.array(range(g_WinMinPtNum,g_WinMaxPtNum+1,1))
+        yglabel_test[:g_HighSNRIndex[0]]=0
+        yglabel_test[g_HighSNRIndex[-1]-1:]=0
+        g=pd.DataFrame(data=yglabel_test)
+        g.to_csv('D:\\EPSupup\\ad\\disperg\\'+'g'+m+'.csv')
+        yplabel_test=np.zeros(151)
+        p=pd.DataFrame(data=yplabel_test)
+        p.to_csv('D:\\EPSupup\\ad\\disperp\\'+'p'+m+'.csv')
+        GroupVImg=np.zeros((VImgPt,NumCtrT))
+        VPoint=VPoint[:]
+        for i in range(NumCtrT):
+            i=i+1
+            f= interp1d(TravPtV, EnvelopeImageSignal[i-1,timeptnum-1].T.conjugate()/AmpS_T[i-1], 'cubic',fill_value="extrapolate")
+            GroupVImg[:VImgPt, i-1] =f(VPoint[:])
+        GroupVImg[:,g_HighSNRIndex[0]-1]=0
+        GroupVImg[:,g_HighSNRIndex[-1]-1]=0
+        g=pd.DataFrame(data= GroupVImg)
+        g.to_csv('D:\\EPSupup\\ad\\datag\\'+'g'+m+'.csv')
+        InitialX=(yglabel_test!=0).argmax(axis=0)+1
+        InitialY=int((yglabel_test[(yglabel_test!=0).argmax(axis=0)]-WinMinV)*500)+1
+        if np.sum(yglabel_test)==0:
+            continue
+        fftNumPt = np.power(2,nextpow2(SampleF/df_freq))
+        WaveNumPt = len(WinWave)
+#         print(InitialY)
+        en.cd(r'D:\EPSupup')
+        PhaseVImg=en.PhaseVImageCalculatio(float(StaDist),matlab.double(WinWave.tolist()),float(NumCtrT),float(g_WinMinPtNum),float(g_WinMaxPtNum),float(VImgPt),matlab.double(GroupVImg.tolist()),float(InitialX),float(InitialY),float(SampleF),float(StartT),float(EndT),float(DeltaT),float(WinMinV),float(WinMaxV),float(DeltaV),float(df_freq),float(g_WindnumT) ,float(g_Winmintime))
+        PhaseVImg=np.array(PhaseVImg)
+        PhaseVImg[:,g_HighSNRIndex[0]-1]=0
+        PhaseVImg[:,g_HighSNRIndex[-1]-1]=0
+        p=pd.DataFrame(data=PhaseVImg)
+        p.to_csv('D:\\EPSupup\\ad\\datap\\'+'p'+m+'.csv')
+    elif m.replace('ZZZZ','GDisp.ZZZZ') not in r:
+        couns+=1
+        if couns>=1100:
+            continue
+        count=0
+        matrix = []
+        f=open(os.path.join(r'D:\EPSupup\q',m))
+        for line in f.readlines():
+            if count==0:
+                lon0=line.split()[0]
+                lat0=line.split()[1]
+                sta1_elev=line.split()[2]
+            if count==1:
+                lon1=line.split()[0]
+                lat1=line.split()[1]
+                sta2_elev =line.split()[2]
+            count+=1
+            if count>2:
+                row = [float(num) for num in line.split()]
+                row=np.array(row)
+                matrix.append(row)
+        GreenFcn=np.array(matrix).transpose()
+        Time = GreenFcn[0,:]
+        PtNum =GreenFcn.shape[1]
+        maxamp = max(max(GreenFcn[1,:]), max(GreenFcn[2,:]))
+        if maxamp > 0:
+            GreenFcn[1,:] = GreenFcn[1,:]/maxamp
+            GreenFcn[2,:] = GreenFcn[2,:]/maxamp
+        GreenFcn[1,:] = hilbert(GreenFcn[1,:]).imag
+        GreenFcn[2,:] = hilbert(GreenFcn[2,:]).imag
+        GreenFcn = GreenFcn[1:3,:]
+        SampleF = 1/(Time[1] - Time[0])
+        SampleT = (Time[1] - Time[0])
+        TPoint = np.array(range(int(StartT*100),int(EndT*100+DeltaT*100),int(DeltaT*100)))/100
+        VPoint = np.array(range(int(WinMinV*1000),int(WinMaxV*1000+DeltaV*1000),int(DeltaV*1000)))/1000
+#         tempDist=en.deg2km(en.distance(float(lat0), float(lon0), float(lat1), float(lon1)))
+        tempDist=gr((float(lat0),float(lon0)),(float(lat1),float(lon1))).km
+        staElevDiff = abs(float(sta2_elev) - float(sta1_elev))/1000
+        StaDist = np.sqrt(tempDist*tempDist + staElevDiff*staElevDiff)
+        VImgPt = len(VPoint)
+        g_WinMaxPtNum = round(SampleF*StaDist/WinMinV) + 1
+        g_WinMinPtNum = round(SampleF*StaDist/WinMaxV) + 1
+        if g_WinMaxPtNum > PtNum:
+            g_WinMaxPtNum = PtNum-1
+            WinMinV = math.ceil(10*StaDist/Time[-1])/10
+        time = np.array(range(g_WinMinPtNum-1,g_WinMaxPtNum,1))/SampleF
+        SignalLength = len(time)
+        VPoint = np.array(range(int(WinMinV*1000),int(WinMaxV*1000+DeltaV*1000),int(DeltaV*1000)))/1000
+        VImgPt = round((WinMaxV - WinMinV)/DeltaV + 1)
+        TravPtV = StaDist/time
+        Time = np.array(range(0,PtNum,1))*SampleT
+        Window = np.zeros(PtNum)
+        Window[g_WinMinPtNum-1:g_WinMaxPtNum] = 1
+        TaperNum = round(20/SampleT)
+        if TaperNum > (g_WinMinPtNum-1):
+            TaperNum1 = g_WinMinPtNum-1
+            Window[:g_WinMinPtNum-1]= np.sin(0.5*math.pi*np.array(range(0,(TaperNum1),1))/TaperNum1)
+        else:
+            Window[(g_WinMinPtNum-TaperNum-1):(g_WinMinPtNum-1)] = np.sin(0.5*math.pi*np.array(range(0,(TaperNum),1))/TaperNum)
+        if (g_WinMaxPtNum + TaperNum) < PtNum:
+            Window[(g_WinMaxPtNum):(g_WinMaxPtNum+TaperNum)] = np.sin(0.5*math.pi*np.array(range(0,(TaperNum),1))/TaperNum)
+        else:
+            TaperNum2 = PtNum - (g_WinMaxPtNum+1) +1
+            Window[(g_WinMaxPtNum):(PtNum)] = np.sin(0.5*math.pi*np.array(reversed(range(0,TaperNum2,1)))/TaperNum2)
+
+        WavePtNum = min((g_WinMaxPtNum + TaperNum), PtNum)
+        WinWave = np.zeros(WavePtNum)
+        stackEGF = GreenFcn[0,:] + GreenFcn[1,:]
+        WinWave = stackEGF[:WavePtNum]*Window[:WavePtNum]
+        WinWave = WinWave/max(abs(WinWave))
+        stackEGF = stackEGF/max(abs(WinWave))
+        NoisePt = round(150/SampleT)
+        NoiseWinWave = np.zeros(NoisePt)
+        if ((g_WinMaxPtNum + TaperNum) + (EndT/SampleT))< PtNum:
+            nn = np.array(range((g_WinMaxPtNum + TaperNum + 1),min((g_WinMaxPtNum + TaperNum + NoisePt),PtNum)+1,1))
+            NoiseWinWave[:len(nn)] = stackEGF[nn-1]
+            NoiseIndex = 1
+            NoiseLength = len(nn)
+        else:
+            NoiseIndex = 0
+        alfa = np.array([[0,100,250,500,1000,2000,4000,20000],[5,8,12,20,25,35,50,75]])
+        f= interp1d(alfa[0,:], alfa[1, :], 'linear')
+        guassalfa=f(StaDist)
+        NumCtrT = len(TPoint)
+        PtNum = len(WinWave)
+        fs=SampleF
+        nfft = math.pow(2,nextpow2(max(PtNum,1024*fs)))
+        xxfft = np.fft.fft(WinWave, int(nfft))
+        fxx = np.array(range(0,int(nfft/2)+1,1))/nfft*fs
+        IIf = np.array(range(1,int(nfft/2+1)+1,1))
+        JJf = np.array(range(int(nfft/2+2),int(nfft)+1,1))
+        EnvelopeImage = np.zeros((NumCtrT, PtNum))
+        for i in range(NumCtrT):
+            i=i+1
+            CtrT = TPoint[i-1]
+            fc = 1/CtrT                
+            Hf = np.exp(-guassalfa*np.power((fxx - fc),2)/math.pow(fc,2))
+            yyfft = np.zeros(int(nfft))
+            yyfft[IIf-1] = xxfft[IIf-1]*Hf
+            yyfft[JJf-1] = np.conjugate(yyfft[np.array(np.array(range(2,int(nfft/2)+1,1))[::-1])])
+            yy = np.real(np.fft.ifft(yyfft, nfft))
+            filtwave = abs(hilbert(yy[:int(nfft)]))
+            EnvelopeImage[i-1, :PtNum] = filtwave[:PtNum]
+
+        EnvelopeImageSignal =EnvelopeImage
+        AmpS_T = np.amax(EnvelopeImageSignal, axis=1)
+        SNR_T = np.zeros(NumCtrT)
+        if NoiseIndex == 1:
+            EnvelopeImageNoise = EnvelopeImageCalculation(NoiseWinWave*signal.windows.tukey(NoisePt,0.2).T.conjugate(), SampleF, TPoint, StaDist)
+            for i in range(NumCtrT):
+                i=i+1
+                SNR_T[i-1] = AmpS_T[i-1]/np.mean(EnvelopeImageNoise[i-1,:NoiseLength])
+            HighSNRIndex = np.where(SNR_T > minSNR)
+            g_HighSNRIndex = HighSNRIndex[0]+1
+            if np.mean(SNR_T) < minSNR/2 or max(SNR_T) < minSNR or len(HighSNRIndex) < 0.1*NumCtrT:
+                IsDispGood = 0
+            else:
+                IsDispGood = 1
+        timeptnum = np.array(range(g_WinMinPtNum,g_WinMaxPtNum+1,1))
+        yglabel_test=np.zeros(151)
+        g=pd.DataFrame(data=yglabel_test)
+        g.to_csv('D:\\EPSupup\\ad\\disperg\\'+'g'+m+'.csv')
+        GroupVImg=np.zeros((VImgPt,NumCtrT))
+        VPoint=VPoint[:]
+        for i in range(NumCtrT):
+            i=i+1
+            f= interp1d(TravPtV, EnvelopeImageSignal[i-1,timeptnum-1].T.conjugate()/AmpS_T[i-1], 'cubic',fill_value="extrapolate")
+            GroupVImg[:VImgPt, i-1] =f(VPoint[:])
+        if len(g_HighSNRIndex)!=0:
+            GroupVImg[:,g_HighSNRIndex[0]-1]=0
+            GroupVImg[:,g_HighSNRIndex[-1]-1]=0
+        g=pd.DataFrame(data=GroupVImg)
+        g.to_csv('D:\\EPSupup\\ad\\datag\\'+'g'+m+'.csv')
