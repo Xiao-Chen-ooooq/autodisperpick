@@ -1,0 +1,48 @@
+import pandas as pd
+import numpy as np
+import os
+Xg=[]
+yg=[]
+filegdata=os.listdir(r'C:\Users\a\Documents\q\datag')
+for i in filegdata:
+    s=pd.read_csv(os.path.join(r'C:\Users\a\Documents\q\datag',i))
+    
+    
+    Xg.append(np.array(s.values[:,1:]).reshape(1501,151,1))
+Xg=np.array(Xg)
+filegdisper=os.listdir(r'C:\Users\a\Documents\q\disperg')
+for j in filegdisper:
+    f=pd.read_csv(os.path.join(r'C:\Users\a\Documents\q\disperg',j))
+    yg.append(np.array(f.values[:,1]))
+yg=np.array(yg)
+    # print(np.array(s).reshape(1501,151,1))
+print(Xg.shape)
+print(yg.shape)
+yg1=(yg-1.5)*500
+# y1=np.linspace(1,8.5,151)
+# y1=(y1-1)*151/7.5
+xg=[]
+
+#print(Xg1[0][0])
+for i in range(len(yg)):
+    Xg0=[]
+    Xg1=np.zeros((1501,151))
+    Xg2=np.ones((1501,151))
+    for j in range(151):
+        if yg1[i][j]>-750:
+            Xg1[int(yg1[i][j])-1][j]=1
+            Xg2[int(yg1[i][j])-1][j]=0
+    Xg0=np.append(Xg1.reshape(1501,151,1),Xg2.reshape(1501,151,1),axis=2)
+    xg.append(Xg0)
+xg=np.array(xg)
+print(xg.shape)
+from sklearn.model_selection import train_test_split
+Xg_train,Xg_test,yg_train,yg_test,yglabel_train,yglabel_test=train_test_split(Xg,xg,yg,test_size=0.1,random_state=0)
+from tensorflow.keras.models import load_model
+modek=load_model(r'C:\Users\a\weights-0-23-0.00056.hdf5')
+validate=(Xg_test,yg_test)
+from tensorflow.keras.callbacks import ModelCheckpoint
+filepath = "weights-0-{epoch:02d}-{val_loss:.2f}.hdf5"
+checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True,mode='min')
+callbacks_list = [checkpoint]
+modek.fit(Xg_train,yg_train,batch_size=5,epochs=159,validation_data=validate)
