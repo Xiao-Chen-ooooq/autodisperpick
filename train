@@ -1,0 +1,74 @@
+import tensorflow as tf
+gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
+tf.config.experimental.set_visible_devices(devices=gpus[0], device_type='GPU')
+tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096*6)])
+from tensorflow.keras.layers import Conv2D,MaxPool2D,Conv2DTranspose,Reshape,add
+from tensorflow.keras.layers import Concatenate,Flatten,Dense,Input,GlobalAveragePooling2D
+from tensorflow.keras import Model
+import numpy as np
+import tensorflow as tf
+def se_block(inputts,inchannels):
+    inchannels=int(inchannels)
+    outputs=GlobalAveragePooling2D()(inputts)
+    outputs=Dense(inchannels*2,activation='relu')(outputs)
+    outputs=Dense(inchannels,activation='sigmoid')(outputs)
+    outputs=Reshape((1,1,inchannels))(outputs)
+    return add([inputts,inputts*outputs])
+
+
+
+inputs =Input(shape=(1501,151,1))
+c1=Conv2D(64,3,padding='same')(inputs)
+c1=Conv2D(64,3,padding='same',activation='relu')(c1)
+C0=se_block(c1,64)
+m1=Conv2D(128,3,2,padding='valid',activation='relu')(C0)
+c3=Conv2D(128,3,padding='same',activation='relu')(m1)
+c4=Conv2D(128,3,padding='same',activation='relu')(c3)
+c4=se_block(c4,128)
+m2=Conv2D(256,3,2,padding='valid',activation='relu')(c4)
+c5=Conv2D(256,3,padding='same',activation='relu')(m2)
+c5=Conv2D(256,3,padding='same',activation='relu')(c5)
+c5=se_block(c5,256)
+m5=Conv2D(512,3,2,padding='valid',activation='relu')(c5)
+c7=Conv2D(512,3,padding='same',activation='relu')(m5)                                                               
+c7=Conv2D(512,3,padding='same',activation='relu')(c7)
+c7=se_block(c7,512)
+m4=Conv2D(512,3,2,padding='valid',activation='relu')(c7)
+c9=Conv2D(512,3,padding='same',activation='relu')(m4)
+c10=Conv2D(512,3,padding='same',activation='relu')(c9)
+c10=se_block(c10,512)
+t1=Conv2DTranspose(512,kernel_size=(4,4),strides=(2,2),padding='valid')(c10)
+C1=Concatenate()([c7,t1])
+c11=Conv2D(512,3,padding='same',activation='relu')(C1)
+c=Conv2D(512,3,padding='same',activation='relu')(c11)
+c=se_block(c,512)
+t2=Conv2DTranspose(256,kernel_size=(4,3),strides=(2,2),padding='valid')(c)
+
+C2=Concatenate()([c5,t2])
+c13=Conv2D(256,3,padding='same',activation='relu')(C2)
+c_=Conv2D(256,3,padding='same',activation='relu')(c13)
+c_=se_block(c_,256)
+t3=Conv2DTranspose(128,kernel_size=(4,3),strides=(2,2),padding='valid')(c_)
+C3=Concatenate()([c4,t3])
+c15=Conv2D(128,3,padding='same',activation='relu')(C3)
+C_=Conv2D(128,3,padding='same',activation='relu')(c15)
+C_=se_block(C_,128)
+t4=Conv2DTranspose(64,kernel_size=(3,3),strides=(2,2),padding='valid')(C_)
+C4=Concatenate()([C0,t4])
+c17=Conv2D(128,3,padding='same',activation='relu')(C4)
+c29=Conv2D(128,3,padding='same',activation='relu')(c17)
+c19=Conv2D(64,3,padding='same',activation='relu')(c29)
+c20=Conv2D(32,3,padding='same',activation='relu')(c19)
+outputs=Conv2D(2,10,padding='same',activation='sigmoid')(c20)
+modek=Model(inputs=inputs,outputs=outputs)
+from tensorflow.keras.optimizers import Adam
+adam=Adam(learning_rate=0.0001)
+modek.compile(loss='binary_crossentropy',optimizer=adam)
+from sklearn.model_selection import train_test_split
+Xg_train,Xg_test,yg_train,yg_test,yglabel_train,yglabel_test=train_test_split(Xg,xg,yg,test_size=0.1,random_state=0)
+validate=(Xg_test,yg_test)
+from tensorflow.keras.callbacks import ModelCheckpoint
+filepath = "weights-0-{epoch:02d}-{val_loss:.5f}.hdf5"
+checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_best_only=True,mode='min')
+callbacks_list = [checkpoint]
+modek.fit(Xg_train,yg_train,batch_size=5,epochs=159,validation_data=validate,callbacks=callbacks_list)
