@@ -14,7 +14,22 @@ def se_block(inputts,inchannels):
     outputs=Dense(inchannels,activation='sigmoid')(outputs)
     outputs=Reshape((1,1,inchannels))(outputs)
     return add([inputts,inputts*outputs])
-
+def LA-block(inputts,inchannels):
+    inchannels=int(inchannels)
+    o0=inputts
+    o1=Conv2D(inchannels,3,padding='same')(inputts)
+    o2=Conv2D(inchannels,3,padding='same')(o1)
+    o3=Conv2D(inchannels,3,padding='same')(o2)
+    o=Concatenate()([o0,o1,o2,o3])
+    outputs=Conv2D(inchannels,3,padding='same')(o)
+    return outputs
+def SA-block(inputts,inchannels):
+    inchannels=int(inchannels)
+    a0=GlobalAveragePooling()(inputts)
+    a1=GlobalMaxPooling()(inputts)
+    a=Concatenate()([a0,a1])
+    o0=Conv2D(inchannels,7,padding='same',activation='sigmoid')(a)
+    return add([inputts,inputts*o0])
 
 
 inputs =Input(shape=(1501,151,1))
